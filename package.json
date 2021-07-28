@@ -1,0 +1,13 @@
+{
+  "name": "mathjax-node-tex2png",
+  "version": "0.0.0",
+  "description": "mathjax-node-tex2png",
+  "main": "server.js",
+  "author": {
+    "name": ""
+  },
+  "dependencies": {
+    "mathjax-node": "^2.1.1",
+    "sharp": "^0.28.3"
+  }
+}
