@@ -3,6 +3,7 @@ const http = require('http');
 const mathjax = require('mathjax-node');
 const sharp = require('sharp');
 const crypto = require('crypto');
+const url = require("url");
 const enableBrotli = true;
 const compress = true;
 const timeout = 5000;
@@ -19,6 +20,10 @@ if (cacheSvg || cachePng || cacheGzip || cacheDeflate)
     var fs = require('fs');
 const cache = "./cache/";
 const port = process.env.PORT || 2082;
+
+String.prototype.replaceAll = function (s1, s2) {
+    return this.replace(new RegExp(s1, "gm"), s2);
+}
 
 if (!fs.existsSync(cache))
     fs.mkdirSync(cache);
@@ -166,6 +171,10 @@ async function runMathjax(req, res) {
     } else if (req.url == "/tex2png") {
         type = ".png";
         tex = await timeoutPromise(getDataTex(req), timeout);
+    } else if (req.url != null && req.url.endsWith(".png")) {
+        tex = decodeURIComponent(req.url.substr(0, req.url.length - 4));
+        type = ".png";
+        tex = tex.replaceAll('/', '\\');
     }
     let data = null;
     let supportGzip = false;
