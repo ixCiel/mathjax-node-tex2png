@@ -3,11 +3,16 @@ const http = require('http');
 const mathjax = require('mathjax-node');
 const sharp = require('sharp');
 const crypto = require('crypto');
-const fs = require('fs');
-
+const compress = true;
 const timeout = 5000;
 const cacheSvg = true;
 const cachePng = true;
+const cacheGzip = true;
+const cacheDeflate = true;
+if (compress)
+    var zlib = require('zlib');
+if (cacheSvg || cachePng || cacheGzip || cacheDeflate)
+    var fs = require('fs');
 const cache = "./cache/";
 const port = process.env.PORT || 2082;
 
@@ -106,9 +111,37 @@ function getDataTex(req) {
     });
 }
 
+function getGzip(buffer,cacheFile) {
+    return new Promise(resolve => {
+        zlib.gzip(buffer, function (err, encoded) {
+            if (err == null && encoded != null) {
+                if (cacheFile != null)
+                    fs.writeFileSync(cacheFile, encoded);
+                resolve(encoded);
+            } else
+                resolve(null);
+        });
+    });
+}
+
+function getDeflate(buffer, cacheFile) {
+    return new Promise(resolve => {
+        zlib.deflate(buffer, function (err, encoded) {
+            if (err == null && encoded != null) {
+                if (cacheFile != null)
+                    fs.writeFileSync(cacheFile, encoded);
+                resolve(encoded);
+            } else
+                resolve(null);
+        });
+    });
+}
+
 async function runMathjax(req, res) {
-    var type = null;
-    var tex = null;
+    let type = null;
+    let tex = null;
+    let encoded = null;
+    let compressType = null;
     if (req.url.startsWith("/tex2svg?")) {
         tex = getTex(req.url);
         type = ".svg";
@@ -122,47 +155,96 @@ async function runMathjax(req, res) {
         type = ".png";
         tex = await timeoutPromise(getDataTex(req), timeout);
     }
-    var code = 200;
-    var ct = 'image/png';
-    var data = null;
+    let data = null;
+    let supportGzip = false;
+    let supportDeflate = false;
+    let gzipFile = null;
+    let deflateFile = null;
     if (tex != null && type != null) {
-        var md5 = null;
-        var svgFile = null;
-        var pngFile = null;
-        if (cacheSvg) {
-            md5 = getCacheName(tex);
-            svgFile = cache + md5 + ".svg";
+        if (compress && type != ".png") {
+            let encoding = req.headers["accept-encoding"];
+            if (encoding && encoding.match(/\bgzip\b/)) {
+                supportGzip = true;
+            }
+            if (encoding && encoding.match(/\bdeflate\b/)) {
+                supportDeflate = true;
+            }
         }
-        if (cachePng) {
-            if (md5 == null)
+        let md5 = null;
+        if (type == ".svg") {
+            if (supportGzip && cacheGzip) {
                 md5 = getCacheName(tex);
-            pngFile = cache + md5 + ".png";
+                gzipFile = cache + md5 + ".svg.gz";
+                encoded = loadFile(gzipFile);
+                if (encoded != null)
+                    compressType = "gzip";
+            }
+            if (encoded == null && supportDeflate && cacheDeflate) {
+                if (md5 == null)
+                    md5 = getCacheName(tex);
+                deflateFile = cache + md5 + ".svg.def.gz";
+                encoded = loadFile(deflateFile);
+                if (encoded != null)
+                    compressType = "deflate";
+            }
         }
-        if (type == ".png")
-            data = loadFile(pngFile);
-        if (data == null) {
-            data = loadFile(svgFile);
-            if (data == null)
-                data = await timeoutPromise(tex2svg(tex, svgFile), timeout);
-            if (type == ".png")
-                data = await timeoutPromise(tex2png(data, pngFile), timeout);
+        if (encoded == null) {
+            let pngFile = null;
+            if (type == ".png") {
+                if (cachePng) {
+                    if (md5 == null)
+                        md5 = getCacheName(tex);
+                    pngFile = cache + md5 + ".png";
+                }
+                data = loadFile(pngFile);
+            }
+            if (data == null) {
+                let svgFile = null;
+                if (cacheSvg) {
+                    if (md5 == null)
+                        md5 = getCacheName(tex);
+                    svgFile = cache + md5 + ".svg";
+                }
+                data = loadFile(svgFile);
+                if (data == null)
+                    data = await timeoutPromise(tex2svg(tex, svgFile), timeout);
+                if (type == ".png")
+                    data = await timeoutPromise(tex2png(data, pngFile), timeout);
+            }
         }
     }
-    if (data == null) {
-        data = 'error';
-        code = 404;
-        ct = 'text/plain';
-    } else if (type == ".svg")
-        ct = 'text/xml';
-    res.writeHead(code, { 'Content-Type': ct });
-    res.end(data);
+    if (data == null && encoded == null) {
+        res.statusCode = 405;
+        res.end();
+    } else {
+        res.statusCode = 200;
+        if (encoded == null && supportGzip) {
+            encoded = await getGzip(data, gzipFile);
+            compressType = "gzip";
+        }
+        if (encoded == null && supportDeflate) {
+            encoded = await getDeflate(data, deflateFile);
+            compressType = "deflate";
+        }
+        if (type == ".svg")
+            res.setHeader('Content-Type', 'text/xml');
+        else
+            res.setHeader('Content-Type', 'image/png');
+        if (data == null || (encoded != null && encoded.length < data.length)) {
+            res.setHeader("Content-Encoding", compressType);
+            res.end(encoded);
+        }
+        else
+            res.end(data);
+    }
 }
 
 http.createServer(function (req, res) {
     try {
+        res.setHeader('Connection', 'close');
         runMathjax(req, res);
     } catch (ex) {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('error\n' + ex);
+        res.statusCode = 405;
+        res.end();
     }
 }).listen(port);
