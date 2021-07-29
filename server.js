@@ -111,22 +111,9 @@ function getDataTex(req) {
     });
 }
 
-function getGzip(buffer,cacheFile) {
+function doZlib(buffer, cacheFile, doCompress) {
     return new Promise(resolve => {
-        zlib.gzip(buffer, function (err, encoded) {
-            if (err == null && encoded != null) {
-                if (cacheFile != null)
-                    fs.writeFileSync(cacheFile, encoded);
-                resolve(encoded);
-            } else
-                resolve(null);
-        });
-    });
-}
-
-function getDeflate(buffer, cacheFile) {
-    return new Promise(resolve => {
-        zlib.deflate(buffer, function (err, encoded) {
+        doCompress(buffer, function (err, encoded) {
             if (err == null && encoded != null) {
                 if (cacheFile != null)
                     fs.writeFileSync(cacheFile, encoded);
@@ -219,11 +206,11 @@ async function runMathjax(req, res) {
     } else {
         res.statusCode = 200;
         if (encoded == null && supportGzip) {
-            encoded = await getGzip(data, gzipFile);
+            encoded = await timeoutPromise(doZlib(data, gzipFile, zlib.gzip), timeout);
             compressType = "gzip";
         }
         if (encoded == null && supportDeflate) {
-            encoded = await getDeflate(data, deflateFile);
+            encoded = await timeoutPromise(doZlib(data, deflateFile, zlib.deflate), timeout);
             compressType = "deflate";
         }
         if (type == ".svg")
