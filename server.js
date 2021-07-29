@@ -172,7 +172,7 @@ async function runMathjax(req, res) {
         type = ".png";
         tex = await timeoutPromise(getDataTex(req), timeout);
     } else if (req.url != null && req.url.endsWith(".png")) {
-        tex = decodeURIComponent(req.url.substr(0, req.url.length - 4));
+        tex = decodeURIComponent(req.url.substr(1, req.url.length - 5));
         type = ".png";
         tex = tex.replaceAll('/', '\\');
     }
