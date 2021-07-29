@@ -3,14 +3,18 @@ const http = require('http');
 const mathjax = require('mathjax-node');
 const sharp = require('sharp');
 const crypto = require('crypto');
+const enableBrotli = true;
 const compress = true;
 const timeout = 5000;
 const cacheSvg = true;
 const cachePng = true;
 const cacheGzip = true;
 const cacheDeflate = true;
+const cacheBrotli = true;
 if (compress)
     var zlib = require('zlib');
+if (enableBrotli)
+    var brotli = require('brotli');
 if (cacheSvg || cachePng || cacheGzip || cacheDeflate)
     var fs = require('fs');
 const cache = "./cache/";
@@ -111,6 +115,27 @@ function getDataTex(req) {
     });
 }
 
+function doBrotli(buffer, cacheFile, mode) {
+    return new Promise(resolve => {
+        try {
+            let encoded = brotli.compress(buffer, {
+                mode: mode, // 0 = generic, 1 = text, 2 = font (WOFF2)
+                quality: 11, // 0 - 11
+                lgwin: 22 // window size
+            });
+            if (encoded != null) {
+                let data = Buffer.from(encoded.buffer);
+                if (cacheFile != null)
+                    fs.writeFileSync(cacheFile, data);
+                resolve(data);
+            }else
+                resolve(null);
+        } catch (ex) {
+            resolve(null);
+        }
+    });
+}
+
 function doZlib(buffer, cacheFile, doCompress) {
     return new Promise(resolve => {
         doCompress(buffer, function (err, encoded) {
@@ -145,10 +170,12 @@ async function runMathjax(req, res) {
     let data = null;
     let supportGzip = false;
     let supportDeflate = false;
+    let supportBrotli = false;
     let gzipFile = null;
     let deflateFile = null;
+    let brotliFile = null;
     if (tex != null && type != null) {
-        if (compress && type != ".png") {
+        if (compress && type == ".svg") {
             let encoding = req.headers["accept-encoding"];
             if (encoding && encoding.match(/\bgzip\b/)) {
                 supportGzip = true;
@@ -156,24 +183,33 @@ async function runMathjax(req, res) {
             if (encoding && encoding.match(/\bdeflate\b/)) {
                 supportDeflate = true;
             }
+            if (enableBrotli && encoding && encoding.match(/\bbr\b/)) {
+                supportBrotli = true;
+            }
         }
         let md5 = null;
-        if (type == ".svg") {
-            if (supportGzip && cacheGzip) {
+        if (supportBrotli && cacheBrotli) {
+            md5 = getCacheName(tex);
+            brotliFile = cache + md5 + type + ".br";
+            encoded = loadFile(brotliFile);
+            if (encoded != null)
+                compressType = "br";
+        }
+        if (encoded == null && supportGzip && cacheGzip) {
+            if (md5 == null)
                 md5 = getCacheName(tex);
-                gzipFile = cache + md5 + ".svg.gz";
-                encoded = loadFile(gzipFile);
-                if (encoded != null)
-                    compressType = "gzip";
-            }
-            if (encoded == null && supportDeflate && cacheDeflate) {
-                if (md5 == null)
-                    md5 = getCacheName(tex);
-                deflateFile = cache + md5 + ".svg.def.gz";
-                encoded = loadFile(deflateFile);
-                if (encoded != null)
-                    compressType = "deflate";
-            }
+            gzipFile = cache + md5 + type + ".gz";
+            encoded = loadFile(gzipFile);
+            if (encoded != null)
+                compressType = "gzip";
+        }
+        if (encoded == null && supportDeflate && cacheDeflate) {
+            if (md5 == null)
+                md5 = getCacheName(tex);
+            deflateFile = cache + md5 + type + ".de";
+            encoded = loadFile(deflateFile);
+            if (encoded != null)
+                compressType = "deflate";
         }
         if (encoded == null) {
             let pngFile = null;
@@ -205,6 +241,10 @@ async function runMathjax(req, res) {
         res.end();
     } else {
         res.statusCode = 200;
+        if (encoded == null && supportBrotli) {
+            encoded = await timeoutPromise(doBrotli(data, brotliFile,0), timeout);
+            compressType = "br";
+        }
         if (encoded == null && supportGzip) {
             encoded = await timeoutPromise(doZlib(data, gzipFile, zlib.gzip), timeout);
             compressType = "gzip";
