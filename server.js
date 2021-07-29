@@ -175,6 +175,10 @@ async function runMathjax(req, res) {
         tex = decodeURIComponent(req.url.substr(1, req.url.length - 5));
         type = ".png";
         tex = tex.replaceAll('/', '\\');
+    } else if (req.url != null && req.url.endsWith(".svg")) {
+        tex = decodeURIComponent(req.url.substr(1, req.url.length - 5));
+        type = ".svg";
+        tex = tex.replaceAll('/', '\\');
     }
     let data = null;
     let supportGzip = false;
