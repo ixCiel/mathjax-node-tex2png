@@ -1,9 +1,9 @@
 'use strict';
-const http = require('http');
 const mathjax = require('mathjax-node');
 const sharp = require('sharp');
 const crypto = require('crypto');
-const url = require("url");
+const path = require("path");
+const mime = require("mime-types");
 const enableBrotli = true;
 const compress = true;
 const timeout = 5000;
@@ -19,7 +19,17 @@ if (enableBrotli)
 if (cacheSvg || cachePng || cacheGzip || cacheDeflate)
     var fs = require('fs');
 const cache = "./cache/";
+const webPath = "./www";
 const port = process.env.PORT || 2082;
+const enableSSL = false;
+if (enableSSL) {
+    var options = {
+        key: fs.readFileSync('path/filename.key'),
+        cert: fs.readFileSync('path/filename.pem')
+    };
+    var https = require('https');
+} else
+    var http = require('http');
 
 String.prototype.replaceAll = function (s1, s2) {
     return this.replace(new RegExp(s1, "gm"), s2);
@@ -154,6 +164,37 @@ function doZlib(buffer, cacheFile, doCompress) {
     });
 }
 
+function doHttp(url, encoding,res) {
+    let filePath = decodeURIComponent(url);
+    let type = filePath.indexOf("?");
+    if (type > 1) {
+        filePath = filePath.substr(1, type - 1);
+    }
+    if (filePath.endsWith("/") || filePath == "") {
+        filePath += "index.html";
+    }
+    type = filePath.lastIndexOf(".");
+    if (type == -1)
+        type = ".";
+    else
+        type = filePath.substr(type, filePath.length - type);
+    let p = path.join(__dirname, webPath + filePath);
+    res.setHeader("Content-Type",mime.lookup(type));
+    fs.access(p, err => {
+        if (err) return res.end("Not Found");
+        let rs = fs.createReadStream(p);
+        if (encoding && encoding.match(/\bgzip\b/)) {
+            res.setHeader("Content-Encoding", "gzip");
+            rs.pipe(zlib.createGzip()).pipe(res);
+        } else if (encoding && encoding.match(/\bdeflate\b/)) {
+            res.setHeader("Content-Encoding", "deflate");
+            rs.pipe(zlib.createDeflate()).pipe(res);
+        } else {
+            return rs.pipe(res);
+        }
+    });
+}
+
 async function runMathjax(req, res) {
     let type = null;
     let tex = null;
@@ -179,6 +220,8 @@ async function runMathjax(req, res) {
         tex = decodeURIComponent(req.url.substr(1, req.url.length - 5));
         type = ".svg";
         tex = tex.replaceAll('/', '\\');
+    } else {
+        return doHttp(req.url, req.headers["accept-encoding"], res);
     }
     let data = null;
     let supportGzip = false;
@@ -279,12 +322,24 @@ async function runMathjax(req, res) {
     }
 }
 
-http.createServer(function (req, res) {
-    try {
-        res.setHeader('Connection', 'close');
-        runMathjax(req, res);
-    } catch (ex) {
-        res.statusCode = 405;
-        res.end();
-    }
-}).listen(port);
+if (enableSSL) {
+    https.createServer(options, function (req, res) {
+        try {
+            res.setHeader('Connection', 'close');
+            runMathjax(req, res);
+        } catch (ex) {
+            res.statusCode = 405;
+            res.end();
+        }
+    }).listen(port);
+} else {
+    http.createServer(function (req, res) {
+        try {
+            res.setHeader('Connection', 'close');
+            runMathjax(req, res);
+        } catch (ex) {
+            res.statusCode = 405;
+            res.end();
+        }
+    }).listen(port);
+}
