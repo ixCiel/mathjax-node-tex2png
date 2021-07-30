@@ -33,3 +33,9 @@ WantedBy=multi-user.target
 
 for certbot
 certbot certonly --webroot -w /var/mathjax-node-tex2png/www/ -d your.domain.xxx
+
+Demo:
+https://mathjax.ixsoleil.cf/tex2svg?tex=f(x_1,x_2,\ldots,x_n)=x_1^2+x_2^2+\cdots+x_n^2
+https://mathjax.ixsoleil.cf/tex2png?tex=f(x_1,x_2,\ldots,x_n)=x_1^2+x_2^2+\cdots+x_n^2
+https://mathjax.ixsoleil.cf/f(x_1,x_2,\ldots,x_n)=x_1^2+x_2^2+\cdots+x_n^2.svg
+https://mathjax.ixsoleil.cf/f(x_1,x_2,\ldots,x_n)=x_1^2+x_2^2+\cdots+x_n^2.png
