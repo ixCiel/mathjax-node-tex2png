@@ -21,6 +21,7 @@ if (cacheSvg || cachePng || cacheGzip || cacheDeflate)
 const cache = "./cache/";
 const webPath = "./www";
 const port = process.env.PORT || 2082;
+const sslPort = 443;
 const enableSSL = false;
 if (enableSSL) {
     var options = {
@@ -331,15 +332,15 @@ if (enableSSL) {
             res.statusCode = 405;
             res.end();
         }
-    }).listen(port);
-} else {
-    http.createServer(function (req, res) {
-        try {
-            res.setHeader('Connection', 'close');
-            runMathjax(req, res);
-        } catch (ex) {
-            res.statusCode = 405;
-            res.end();
-        }
-    }).listen(port);
+    }).listen(sslPort);
 }
+http.createServer(function (req, res) {
+    try {
+        res.setHeader('Connection', 'close');
+        runMathjax(req, res);
+    } catch (ex) {
+        res.statusCode = 405;
+        res.end();
+    }
+}).listen(port);
+
