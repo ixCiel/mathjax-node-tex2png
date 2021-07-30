@@ -4,40 +4,52 @@ const sharp = require('sharp');
 const crypto = require('crypto');
 const path = require("path");
 const mime = require("mime-types");
-const enableBrotli = true;
-const compress = true;
-const timeout = 5000;
-const cacheSvg = true;
-const cachePng = true;
-const cacheGzip = true;
-const cacheDeflate = true;
-const cacheBrotli = true;
+const fs = require('fs');
+const http = require('http');
+
+var args = require('minimist')(process.argv.slice(2));
+const enableBrotli = args.enableBrotli || false;
+const compress = args.compress || false;
+const timeout = args.timeout || 5000;
+const enableCache = args.enableCache || false;
+var cacheSvg = args.cacheSvg || enableCache;
+cacheSvg = cacheSvg == "false" ? false : cacheSvg;
+var cachePng = args.cachePng || enableCache;
+cachePng = cachePng == "false" ? false : cachePng;
+var cacheGzip = args.cacheGzip || enableCache;
+cacheGzip = cacheGzip == "false" ? false : cacheGzip;
+var cacheDeflate = args.cacheDeflate || enableCache;
+cacheDeflate = cacheDeflate == "false" ? false : cacheDeflate;
+var cacheBrotli = args.cacheBrotli || enableCache;
+cacheBrotli = cacheBrotli == "false" ? false : cacheBrotli;
+
 if (compress)
     var zlib = require('zlib');
 if (enableBrotli)
     var brotli = require('brotli');
-if (cacheSvg || cachePng || cacheGzip || cacheDeflate)
-    var fs = require('fs');
+
 const cache = "./cache/";
+if (!fs.existsSync(cache))
+    fs.mkdirSync(cache);
+
 const webPath = "./www";
-const port = process.env.PORT || 2082;
-const sslPort = 443;
-const enableSSL = false;
+
+const port = args.port || process.env.PORT || 80;
+const sslPort = args.sslPort || process.env.SSLPORT || 443;
+var enableSSL = args.enableSSL || false;
+
 if (enableSSL) {
-    var options = {
-        key: fs.readFileSync('path/filename.key'),
-        cert: fs.readFileSync('path/filename.pem')
-    };
-    var https = require('https');
-} else
-    var http = require('http');
+    var keyFile = args.keyPath || process.env.keyPath;
+    var certFile = args.certPath || process.env.certPath;
+    if (keyFile && certFile && fs.existsSync(keyFile) && fs.existsSync(certFile)) {
+        var https = require('https');
+    } else
+        enableSSL = false;
+}
 
 String.prototype.replaceAll = function (s1, s2) {
     return this.replace(new RegExp(s1, "gm"), s2);
 }
-
-if (!fs.existsSync(cache))
-    fs.mkdirSync(cache);
 
 function getCacheName(tex) {
     return crypto.createHash('md5').update(tex).digest("hex");
@@ -184,10 +196,10 @@ function doHttp(url, encoding,res) {
     fs.access(p, err => {
         if (err) return res.end("Not Found");
         let rs = fs.createReadStream(p);
-        if (encoding && encoding.match(/\bgzip\b/)) {
+        if (compress && encoding && encoding.match(/\bgzip\b/)) {
             res.setHeader("Content-Encoding", "gzip");
             rs.pipe(zlib.createGzip()).pipe(res);
-        } else if (encoding && encoding.match(/\bdeflate\b/)) {
+        } else if (compress && encoding && encoding.match(/\bdeflate\b/)) {
             res.setHeader("Content-Encoding", "deflate");
             rs.pipe(zlib.createDeflate()).pipe(res);
         } else {
@@ -310,10 +322,7 @@ async function runMathjax(req, res) {
             encoded = await timeoutPromise(doZlib(data, deflateFile, zlib.deflate), timeout);
             compressType = "deflate";
         }
-        if (type == ".svg")
-            res.setHeader('Content-Type', 'text/xml');
-        else
-            res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Type', mime.lookup(type));
         if (data == null || (encoded != null && encoded.length < data.length)) {
             res.setHeader("Content-Encoding", compressType);
             res.end(encoded);
@@ -324,7 +333,10 @@ async function runMathjax(req, res) {
 }
 
 if (enableSSL) {
-    https.createServer(options, function (req, res) {
+    https.createServer({
+        key: fs.readFileSync(keyFile),
+        cert: fs.readFileSync(certFile)
+    }, function (req, res) {
         try {
             res.setHeader('Connection', 'close');
             runMathjax(req, res);
