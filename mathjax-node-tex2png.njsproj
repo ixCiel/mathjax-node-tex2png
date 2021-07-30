@@ -5,7 +5,7 @@
     <Name>mathjax-node-tex2png</Name>
     <RootNamespace>mathjax-node-tex2png</RootNamespace>
     <SaveNodeJsSettingsInProjectFile>True</SaveNodeJsSettingsInProjectFile>
-    <ScriptArguments>--enableCache --cacheSvg false</ScriptArguments>
+    <ScriptArguments>--enableBrotli --compress --enableCache</ScriptArguments>
   </PropertyGroup>
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>

@@ -75,9 +75,7 @@ function timeoutPromise(promise, ms) {
 }
 
 function loadFile(path) {
-    if (path == null)
-        return null;
-    if (fs.existsSync(path))
+    if (path != null &&fs.existsSync(path))
         return fs.readFileSync(path);
     return null;
 }
@@ -92,10 +90,9 @@ function tex2svg(tex, cacheFile) {
             if (!data.errors) {
                 if (cacheFile != null)
                     fs.writeFileSync(cacheFile, data.svg);
-                resolve(data.svg);
-            } else {
-                resolve(null);
+                return resolve(data.svg);
             }
+            resolve(null);
         });
     });
 }
@@ -155,12 +152,11 @@ function doBrotli(buffer, cacheFile, mode) {
                 let data = Buffer.from(encoded.buffer);
                 if (cacheFile != null)
                     fs.writeFileSync(cacheFile, data);
-                resolve(data);
-            }else
-                resolve(null);
+                return resolve(data);
+            }
         } catch (ex) {
-            resolve(null);
         }
+        resolve(null);
     });
 }
 
@@ -170,9 +166,9 @@ function doZlib(buffer, cacheFile, doCompress) {
             if (err == null && encoded != null) {
                 if (cacheFile != null)
                     fs.writeFileSync(cacheFile, encoded);
-                resolve(encoded);
-            } else
-                resolve(null);
+                return resolve(encoded);
+            }
+            resolve(null);
         });
     });
 }
@@ -198,13 +194,12 @@ function doHttp(url, encoding,res) {
         let rs = fs.createReadStream(p);
         if (compress && encoding && encoding.match(/\bgzip\b/)) {
             res.setHeader("Content-Encoding", "gzip");
-            rs.pipe(zlib.createGzip()).pipe(res);
+            return rs.pipe(zlib.createGzip()).pipe(res);
         } else if (compress && encoding && encoding.match(/\bdeflate\b/)) {
             res.setHeader("Content-Encoding", "deflate");
-            rs.pipe(zlib.createDeflate()).pipe(res);
-        } else {
-            return rs.pipe(res);
+            return rs.pipe(zlib.createDeflate()).pipe(res);
         }
+        return rs.pipe(res);
     });
 }
 
@@ -233,9 +228,8 @@ async function runMathjax(req, res) {
         tex = decodeURIComponent(req.url.substr(1, req.url.length - 5));
         type = ".svg";
         tex = tex.replaceAll('/', '\\');
-    } else {
+    } else
         return doHttp(req.url, req.headers["accept-encoding"], res);
-    }
     let data = null;
     let supportGzip = false;
     let supportDeflate = false;
@@ -246,15 +240,12 @@ async function runMathjax(req, res) {
     if (tex != null && type != null) {
         if (compress && type == ".svg") {
             let encoding = req.headers["accept-encoding"];
-            if (encoding && encoding.match(/\bgzip\b/)) {
+            if (encoding && encoding.match(/\bgzip\b/))
                 supportGzip = true;
-            }
-            if (encoding && encoding.match(/\bdeflate\b/)) {
+            if (encoding && encoding.match(/\bdeflate\b/))
                 supportDeflate = true;
-            }
-            if (enableBrotli && encoding && encoding.match(/\bbr\b/)) {
+            if (enableBrotli && encoding && encoding.match(/\bbr\b/))
                 supportBrotli = true;
-            }
         }
         let md5 = null;
         if (supportBrotli && cacheBrotli) {
@@ -307,29 +298,27 @@ async function runMathjax(req, res) {
     }
     if (data == null && encoded == null) {
         res.statusCode = 405;
-        res.end();
-    } else {
-        res.statusCode = 200;
-        if (encoded == null && supportBrotli) {
-            encoded = await timeoutPromise(doBrotli(data, brotliFile,0), timeout);
-            compressType = "br";
-        }
-        if (encoded == null && supportGzip) {
-            encoded = await timeoutPromise(doZlib(data, gzipFile, zlib.gzip), timeout);
-            compressType = "gzip";
-        }
-        if (encoded == null && supportDeflate) {
-            encoded = await timeoutPromise(doZlib(data, deflateFile, zlib.deflate), timeout);
-            compressType = "deflate";
-        }
-        res.setHeader('Content-Type', mime.lookup(type));
-        if (data == null || (encoded != null && encoded.length < data.length)) {
-            res.setHeader("Content-Encoding", compressType);
-            res.end(encoded);
-        }
-        else
-            res.end(data);
+        return res.end();
     }
+    res.statusCode = 200;
+    if (encoded == null && supportBrotli) {
+        encoded = await timeoutPromise(doBrotli(data, brotliFile, 0), timeout);
+        compressType = "br";
+    }
+    if (encoded == null && supportGzip) {
+        encoded = await timeoutPromise(doZlib(data, gzipFile, zlib.gzip), timeout);
+        compressType = "gzip";
+    }
+    if (encoded == null && supportDeflate) {
+        encoded = await timeoutPromise(doZlib(data, deflateFile, zlib.deflate), timeout);
+        compressType = "deflate";
+    }
+    res.setHeader('Content-Type', mime.lookup(type));
+    if (data == null || (encoded != null && encoded.length < data.length)) {
+        res.setHeader("Content-Encoding", compressType);
+        return res.end(encoded);
+    }
+    res.end(data);
 }
 
 if (enableSSL) {
@@ -338,7 +327,6 @@ if (enableSSL) {
         cert: fs.readFileSync(certFile)
     }, function (req, res) {
         try {
-            res.setHeader('Connection', 'close');
             runMathjax(req, res);
         } catch (ex) {
             res.statusCode = 405;
@@ -348,7 +336,6 @@ if (enableSSL) {
 }
 http.createServer(function (req, res) {
     try {
-        res.setHeader('Connection', 'close');
         runMathjax(req, res);
     } catch (ex) {
         res.statusCode = 405;
